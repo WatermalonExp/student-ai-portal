@@ -22,16 +22,13 @@ from portal_tools import (
     delete_doc_by_id,
 )
 
-# =========================
 # INIT
-# =========================
 init_db_all()
 UPLOAD_ROOT = "uploads"
 
 
-# =========================
+
 # Helpers
-# =========================
 def required_docs_for(level: str):
     return REQUIRED_DOCS_BACHELOR if level == "Bachelor" else REQUIRED_DOCS_MASTER
 
@@ -73,9 +70,8 @@ def compute_progress_and_status(app_id: int, level: str):
     return progress_text, computed_status, missing
 
 
-# =========================
+
 # PUBLIC AI
-# =========================
 def ai_public_answer(question: str, level: str, programme: str):
     question = (question or "").strip()
     if not question:
@@ -98,9 +94,6 @@ def ai_public_answer(question: str, level: str, programme: str):
     return ask_llm(prompt)
 
 
-# =========================
-# AUTH wrappers
-# =========================
 def do_register(full_name: str, email: str, password: str):
     try:
         uid = auth.register_user(full_name, email, password)
@@ -117,9 +110,8 @@ def do_login(email: str, password: str):
         return f"❌ Login failed: {e}", None
 
 
-# =========================
+
 # Dashboard (student)
-# =========================
 def refresh_apps(user_id):
     if not user_id:
         return "Not logged in.", [], gr.update(choices=[], value=None)
@@ -147,9 +139,8 @@ def apply_create(user_id, level, programme):
         return f"❌ Could not create application: {e}", None
 
 
-# =========================
+
 # Application page (student)
-# =========================
 def docs_text_and_delete_choices(user_id, app_id):
     if not user_id or not app_id:
         return "No documents loaded.", gr.update(choices=[], value=None)
@@ -367,9 +358,8 @@ def submit_application(user_id, app_id):
     return "✅ Application submitted! Uploads and deletions are now locked."
 
 
-# =========================
-# ADMIN (clean layout)
-# =========================
+
+# ADMIN
 def admin_refresh(user_id):
     if not user_id:
         return "Not logged in.", []
@@ -405,9 +395,8 @@ def admin_set_status(user_id, app_id, new_status, note):
     return f"✅ Updated application #{app_id} to {new_status}"
 
 
-# =========================
+
 # PORTAL AI
-# =========================
 def portal_chat_fn(message, history, user_id_val, app_id_val):
     message = (message or "").strip()
     if not message:
@@ -478,9 +467,8 @@ def portal_chat_fn(message, history, user_id_val, app_id_val):
     return ask_llm(prompt)
 
 
-# =========================
-# Logout (global top-right)
-# =========================
+
+# Logout 
 def do_logout_reset():
     return (
         "✅ Logged out.",
@@ -515,10 +503,7 @@ def do_logout_reset():
         "",                        # whoami_text
     )
 
-
-# =========================
 # UI
-# =========================
 with gr.Blocks(title="Student Application Portal (Beta)") as demo:
     user_id_state = gr.State(None)
     selected_app_id_state = gr.State(None)
@@ -537,7 +522,7 @@ with gr.Blocks(title="Student Application Portal (Beta)") as demo:
             gr.Markdown("")                # spacer
             logout_btn = gr.Button("Logout")  # right
 
-    # ------------------ PUBLIC ------------------
+    # PUBLIC 
     with public_group:
         with gr.Tabs():
             with gr.Tab("Degrees"):
@@ -568,7 +553,7 @@ with gr.Blocks(title="Student Application Portal (Beta)") as demo:
 
                 auth_out = gr.Textbox(label="Status", interactive=False, lines=2, max_lines=2)
 
-    # ------------------ PRIVATE (container) ------------------
+    # PRIVATE
     with private_group:
         # Student-only UI
         student_group = gr.Group(visible=False)
@@ -634,7 +619,7 @@ with gr.Blocks(title="Student Application Portal (Beta)") as demo:
                         additional_inputs=[user_id_state, selected_app_id_state],
                     )
 
-        # Admin-only UI (clean)
+        # Admin-only UI
         admin_only_group = gr.Group(visible=False)
         with admin_only_group:
             gr.Markdown("## Admin / Reviewer Console")
@@ -664,9 +649,7 @@ with gr.Blocks(title="Student Application Portal (Beta)") as demo:
             admin_update_btn = gr.Button("Apply decision")
             admin_update_out = gr.Textbox(label="Update result", interactive=False)
 
-    # =========================
-    # WIRING
-    # =========================
+
     def _after_login(uid: int):
         is_admin = auth.is_admin_user(int(uid))
         email = auth.get_user_email(int(uid))
@@ -731,7 +714,7 @@ with gr.Blocks(title="Student Application Portal (Beta)") as demo:
 
     refresh_btn.click(refresh_apps, [user_id_state], [dash_out, apps_table, apps_dropdown])
 
-    # Shared outputs for load_application (prevents mismatched ordering bugs)
+    # Shared outputs for load_application
     LOAD_APP_OUTPUTS = [
         app_summary, app_level, app_name, app_status,
         req_doc_type, upload_out, docs_out, delete_doc_dropdown, delete_out,
@@ -743,22 +726,22 @@ with gr.Blocks(title="Student Application Portal (Beta)") as demo:
     apps_dropdown.change(lambda x: x, [apps_dropdown], [selected_app_id_state])
     apps_dropdown.change(load_application, [user_id_state, apps_dropdown], LOAD_APP_OUTPUTS)
 
-    # Upload -> refresh docs + reload
+    # Upload
     upload_btn.click(upload_doc, [user_id_state, apps_dropdown, req_doc_type, file_obj], [upload_out])
     upload_btn.click(docs_text_and_delete_choices, [user_id_state, apps_dropdown], [docs_out, delete_doc_dropdown])
     upload_btn.click(load_application, [user_id_state, apps_dropdown], LOAD_APP_OUTPUTS)
 
-    # Delete selected -> refresh docs + reload
+    # Delete selected
     delete_one_btn.click(delete_one_doc, [user_id_state, apps_dropdown, delete_doc_dropdown], [delete_out])
     delete_one_btn.click(docs_text_and_delete_choices, [user_id_state, apps_dropdown], [docs_out, delete_doc_dropdown])
     delete_one_btn.click(load_application, [user_id_state, apps_dropdown], LOAD_APP_OUTPUTS)
 
-    # Delete all -> refresh docs + reload
+    # Delete all
     delete_all_btn.click(delete_all_docs, [user_id_state, apps_dropdown], [delete_out])
     delete_all_btn.click(docs_text_and_delete_choices, [user_id_state, apps_dropdown], [docs_out, delete_doc_dropdown])
     delete_all_btn.click(load_application, [user_id_state, apps_dropdown], LOAD_APP_OUTPUTS)
 
-    # Submit -> reload + refresh dashboard list
+    # Submit
     submit_btn.click(submit_application, [user_id_state, apps_dropdown], [upload_out])
     submit_btn.click(load_application, [user_id_state, apps_dropdown], LOAD_APP_OUTPUTS)
     submit_btn.click(refresh_apps, [user_id_state], [dash_out, apps_table, apps_dropdown])
@@ -768,7 +751,7 @@ with gr.Blocks(title="Student Application Portal (Beta)") as demo:
     admin_update_btn.click(admin_set_status, [user_id_state, admin_app_id, admin_new_status, admin_note], [admin_update_out])
     admin_update_btn.click(admin_refresh, [user_id_state], [admin_status, admin_table])
 
-    # Global logout (top-right)
+    # Logout
     logout_btn.click(
         do_logout_reset,
         [],
@@ -795,5 +778,6 @@ if __name__ == "__main__":
         server_port=port,
         show_api=False
     )
+
 
 

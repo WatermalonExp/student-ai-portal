@@ -1,1 +1,1 @@
-gradio 6.3.0
+gradio==6.3.0

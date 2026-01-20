@@ -2,7 +2,6 @@ import os
 import hashlib
 from models_db import con, now
 
-# Put admin emails here (must match user email exactly)
 ADMIN_EMAILS = {"alex@gmail.com"}
 
 def _hash_password(password: str, salt_hex: str) -> str:
@@ -80,3 +79,4 @@ def get_user_email(user_id: int) -> str:
 def is_admin_user(user_id: int) -> bool:
     email = (get_user_email(user_id) or "").strip().lower()
     return email in {e.lower() for e in ADMIN_EMAILS}
+

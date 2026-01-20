@@ -5,10 +5,7 @@ from models_db import con, now
 ADMIN_EMAILS = {"alex@gmail.com"}
 
 def _hash_password(password: str, salt_hex: str) -> str:
-    """
-    Your DB has password_hash + password_salt.
-    We'll do sha256(salt + password) where salt is hex string.
-    """
+    
     password = password or ""
     s = (salt_hex or "") + password
     return hashlib.sha256(s.encode("utf-8")).hexdigest()
@@ -79,4 +76,5 @@ def get_user_email(user_id: int) -> str:
 def is_admin_user(user_id: int) -> bool:
     email = (get_user_email(user_id) or "").strip().lower()
     return email in {e.lower() for e in ADMIN_EMAILS}
+
 

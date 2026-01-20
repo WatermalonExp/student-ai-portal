@@ -22,13 +22,12 @@ from portal_tools import (
     delete_doc_by_id,
 )
 
-# INIT
+
 init_db_all()
-UPLOAD_ROOT = "uploads"
+UPLOAD_ROOT = os.environ.get("UPLOAD_ROOT", "uploads")
 
 
 
-# Helpers
 def required_docs_for(level: str):
     return REQUIRED_DOCS_BACHELOR if level == "Bachelor" else REQUIRED_DOCS_MASTER
 
@@ -45,12 +44,14 @@ def update_programmes(level: str):
         value=None,
     )
 
+
 def requirements_md(level: str, programme: str):
     if not programme:
         return "Select a programme to see the typical required documents."
     req = required_docs_for(level)
     bullets = "\n".join([f"- {x}" for x in req])
     return f"### Typical required documents for **{programme}** ({level})\n{bullets}"
+
 
 def _ensure_dir(path: str):
     os.makedirs(path, exist_ok=True)
@@ -70,8 +71,9 @@ def compute_progress_and_status(app_id: int, level: str):
     return progress_text, computed_status, missing
 
 
-
+# =========================
 # PUBLIC AI
+# =========================
 def ai_public_answer(question: str, level: str, programme: str):
     question = (question or "").strip()
     if not question:
@@ -110,8 +112,8 @@ def do_login(email: str, password: str):
         return f"❌ Login failed: {e}", None
 
 
-
 # Dashboard (student)
+
 def refresh_apps(user_id):
     if not user_id:
         return "Not logged in.", [], gr.update(choices=[], value=None)
@@ -359,16 +361,18 @@ def submit_application(user_id, app_id):
 
 
 
-# ADMIN
+# ADMIN 
 def admin_refresh(user_id):
     if not user_id:
-        return "Not logged in.", []
+        return "Not logged in.", [], gr.update(choices=[], value=None)
     if not auth.is_admin_user(int(user_id)):
-        return "Not authorized.", []
+        return "Not authorized.", [], gr.update(choices=[], value=None)
 
     rows = applications.list_all_applications()
     table = [[app_id, uid, lvl, prog, status, ts] for app_id, uid, lvl, prog, status, ts in rows]
-    return f"Found {len(rows)} total applications.", table
+    choices = [(f"#{app_id} — {lvl} — {prog} — {status}", app_id) for app_id, uid, lvl, prog, status, ts in rows]
+    dd = gr.update(choices=choices, value=(choices[0][1] if choices else None))
+    return f"Found {len(rows)} total applications.", table, dd
 
 
 def admin_set_status(user_id, app_id, new_status, note):
@@ -394,6 +398,41 @@ def admin_set_status(user_id, app_id, new_status, note):
     )
     return f"✅ Updated application #{app_id} to {new_status}"
 
+
+def admin_load_documents(user_id, app_id):
+
+    if not user_id or not auth.is_admin_user(int(user_id)):
+        return [], gr.update(choices=[], value=None), {}, None
+
+    if not app_id:
+        return [], gr.update(choices=[], value=None), {}, None
+
+    docs = applications.list_documents(int(app_id))
+    if not docs:
+        return [], gr.update(choices=[], value=None), {}, None
+
+    table = []
+    labels = []
+    path_map = {}
+
+    for doc_id, doc_type, fname, saved_path, ts in docs:
+        table.append([doc_type, fname, ts])
+        label = f"[{doc_id}] {doc_type} — {fname}"
+        labels.append(label)
+        path_map[label] = saved_path
+
+    return table, gr.update(choices=labels, value=labels[0]), path_map, None
+
+
+def admin_download_selected(label, path_map):
+    if not label:
+        return None
+    if not path_map or label not in path_map:
+        return None
+    path = path_map[label]
+    if not path or not os.path.exists(path):
+        return None
+    return path 
 
 
 # PORTAL AI
@@ -469,6 +508,7 @@ def portal_chat_fn(message, history, user_id_val, app_id_val):
 
 
 # Logout 
+
 def do_logout_reset():
     return (
         "✅ Logged out.",
@@ -484,12 +524,12 @@ def do_logout_reset():
         gr.update(choices=[], value=None),  # apps_dropdown
         "Select an application from the dropdown.",  # app_summary
         "—", "—", "—",             # app_level/name/status
+        "",                        # student_note
         gr.update(choices=[], value=None),  # req_doc_type
         "",                        # upload_out
         "No documents loaded.",    # docs_out
         gr.update(choices=[], value=None),  # delete_doc_dropdown
         "",                        # delete_out
-        "",                        # student_note
         gr.update(visible=False),  # submit_btn
         gr.update(interactive=True),
         gr.update(interactive=True),
@@ -499,14 +539,23 @@ def do_logout_reset():
         "",                        # admin_note
         "Not loaded.",             # admin_status
         [],                        # admin_table
+        gr.update(choices=[], value=None),  # admin_app_pick
         "",                        # admin_update_out
+        [],                        # admin_docs_table
+        gr.update(choices=[], value=None),  # admin_doc_selector
+        {},                        # admin_doc_paths_state
+        None,                      # admin_download
         "",                        # whoami_text
     )
 
-# UI
+
+#UI
 with gr.Blocks(title="Student Application Portal (Beta)") as demo:
     user_id_state = gr.State(None)
     selected_app_id_state = gr.State(None)
+
+    # Admin docs state map
+    admin_doc_paths_state = gr.State({})
 
     # Visible when NOT logged in
     public_group = gr.Group(visible=True)
@@ -514,7 +563,7 @@ with gr.Blocks(title="Student Application Portal (Beta)") as demo:
     # Visible when logged in
     private_group = gr.Group(visible=False)
 
-    # Global top bar (visible only when logged in)
+    # Global top bar
     topbar_group = gr.Group(visible=False)
     with topbar_group:
         with gr.Row():
@@ -522,7 +571,7 @@ with gr.Blocks(title="Student Application Portal (Beta)") as demo:
             gr.Markdown("")                # spacer
             logout_btn = gr.Button("Logout")  # right
 
-    # PUBLIC 
+    #Public
     with public_group:
         with gr.Tabs():
             with gr.Tab("Degrees"):
@@ -553,7 +602,7 @@ with gr.Blocks(title="Student Application Portal (Beta)") as demo:
 
                 auth_out = gr.Textbox(label="Status", interactive=False, lines=2, max_lines=2)
 
-    # PRIVATE
+    #Private
     with private_group:
         # Student-only UI
         student_group = gr.Group(visible=False)
@@ -564,9 +613,11 @@ with gr.Blocks(title="Student Application Portal (Beta)") as demo:
                     d_level = gr.Radio(choices=["Bachelor", "Master"], value="Bachelor", label="Programme Level")
                     d_programme = gr.Dropdown(choices=BACHELOR_PROGRAMMES, label="Programme")
                     d_level.change(update_programmes, inputs=[d_level], outputs=[d_programme])
+
                     req_preview = gr.Markdown("Select a programme to see the typical required documents.")
                     d_programme.change(requirements_md, inputs=[d_level, d_programme], outputs=[req_preview])
                     d_level.change(requirements_md, inputs=[d_level, d_programme], outputs=[req_preview])
+
                     apply_btn = gr.Button("Apply / Create Application")
                     apply_out = gr.Textbox(label="Result", interactive=False, lines=2, max_lines=4)
 
@@ -623,6 +674,7 @@ with gr.Blocks(title="Student Application Portal (Beta)") as demo:
         admin_only_group = gr.Group(visible=False)
         with admin_only_group:
             gr.Markdown("## Admin / Reviewer Console")
+
             with gr.Row():
                 admin_refresh_btn = gr.Button("Refresh applications")
                 admin_status = gr.Textbox(label="Admin status", interactive=False)
@@ -632,8 +684,9 @@ with gr.Blocks(title="Student Application Portal (Beta)") as demo:
                 interactive=False,
             )
 
+            admin_app_pick = gr.Dropdown(label="Select application to review", choices=[])
+
             with gr.Row():
-                admin_app_id = gr.Number(label="Application ID", precision=0)
                 admin_new_status = gr.Dropdown(
                     choices=["Submitted", "Approved", "Rejected", "In Progress", "Complete"],
                     value="Approved",
@@ -648,6 +701,15 @@ with gr.Blocks(title="Student Application Portal (Beta)") as demo:
 
             admin_update_btn = gr.Button("Apply decision")
             admin_update_out = gr.Textbox(label="Update result", interactive=False)
+
+            gr.Markdown("### 📂 Uploaded Documents")
+            admin_docs_table = gr.Dataframe(
+                headers=["Doc Type", "Filename", "Uploaded"],
+                interactive=False,
+            )
+
+            admin_doc_selector = gr.Dropdown(label="Select document to download", choices=[])
+            admin_download = gr.File(label="Download selected document")
 
 
     def _after_login(uid: int):
@@ -707,7 +769,7 @@ with gr.Blocks(title="Student Application Portal (Beta)") as demo:
     r_btn.click(post_login_refresh, [user_id_state], [dash_out, apps_table, apps_dropdown])
     l_btn.click(post_login_refresh, [user_id_state], [dash_out, apps_table, apps_dropdown])
 
-    # Student apply + refresh list
+    # Student apply
     apply_btn.click(apply_create, [user_id_state, d_level, d_programme], [apply_out, selected_app_id_state])
     apply_btn.click(refresh_apps, [user_id_state], [dash_out, apps_table, apps_dropdown])
     apply_btn.click(lambda x: x, [selected_app_id_state], [apps_dropdown])
@@ -746,12 +808,31 @@ with gr.Blocks(title="Student Application Portal (Beta)") as demo:
     submit_btn.click(load_application, [user_id_state, apps_dropdown], LOAD_APP_OUTPUTS)
     submit_btn.click(refresh_apps, [user_id_state], [dash_out, apps_table, apps_dropdown])
 
-    # Admin
-    admin_refresh_btn.click(admin_refresh, [user_id_state], [admin_status, admin_table])
-    admin_update_btn.click(admin_set_status, [user_id_state, admin_app_id, admin_new_status, admin_note], [admin_update_out])
-    admin_update_btn.click(admin_refresh, [user_id_state], [admin_status, admin_table])
+    # Admin refresh
+    admin_refresh_btn.click(admin_refresh, [user_id_state], [admin_status, admin_table, admin_app_pick])
 
-    # Logout
+    admin_app_pick.change(
+        admin_load_documents,
+        inputs=[user_id_state, admin_app_pick],
+        outputs=[admin_docs_table, admin_doc_selector, admin_doc_paths_state, admin_download],
+    )
+
+    # Download selected doc
+    admin_doc_selector.change(
+        admin_download_selected,
+        inputs=[admin_doc_selector, admin_doc_paths_state],
+        outputs=[admin_download],
+    )
+
+    # Admin decision
+    admin_update_btn.click(
+        admin_set_status,
+        [user_id_state, admin_app_pick, admin_new_status, admin_note],
+        [admin_update_out],
+    )
+    admin_update_btn.click(admin_refresh, [user_id_state], [admin_status, admin_table, admin_app_pick])
+
+    # Global logout
     logout_btn.click(
         do_logout_reset,
         [],
@@ -760,24 +841,16 @@ with gr.Blocks(title="Student Application Portal (Beta)") as demo:
             public_group, private_group, topbar_group, student_group, admin_only_group,
             dash_out, apps_table, apps_dropdown,
             app_summary, app_level, app_name, app_status,
+            student_note,
             req_doc_type, upload_out, docs_out,
             delete_doc_dropdown, delete_out,
-            student_note,
             submit_btn, upload_btn, delete_one_btn, delete_all_btn, file_obj, req_doc_type,
-            admin_note, admin_status, admin_table, admin_update_out,
+            admin_note, admin_status, admin_table, admin_app_pick, admin_update_out,
+            admin_docs_table, admin_doc_selector, admin_doc_paths_state, admin_download,
             whoami_text,
         ],
     )
 
-import os
-
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 7860))
-    demo.launch(
-        server_name="0.0.0.0",
-        server_port=port,
-        show_api=False
-    )
-
-
-
+    demo.launch(server_name="0.0.0.0", server_port=port, show_api=False)

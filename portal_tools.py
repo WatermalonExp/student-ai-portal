@@ -6,9 +6,7 @@ from programmes import REQUIRED_DOCS_BACHELOR, REQUIRED_DOCS_MASTER
 from models_db import con
 
 
-# =====================================================
-# Internal helpers (schema-robust)
-# =====================================================
+# Internal helpers
 def _table_columns(table_name: str) -> List[str]:
     conn = con()
     cur = conn.cursor()
@@ -36,9 +34,8 @@ def _documents_schema():
     return id_col, app_col, path_col
 
 
-# =====================================================
+
 # Listing
-# =====================================================
 def list_my_applications(user_id: int) -> List[Dict[str, Any]]:
     rows = applications.list_applications(int(user_id))
     out = []
@@ -47,9 +44,7 @@ def list_my_applications(user_id: int) -> List[Dict[str, Any]]:
     return out
 
 
-# =====================================================
-# Summary (includes status)
-# =====================================================
+# Summary status
 def application_summary(app_id: int) -> Optional[Dict[str, Any]]:
     row = applications.read_application(int(app_id))
     if not row:
@@ -73,9 +68,8 @@ def application_summary(app_id: int) -> Optional[Dict[str, Any]]:
     }
 
 
-# =====================================================
-# Delete docs (direct SQLite, works even without app helpers)
-# =====================================================
+# Delete docs
+
 def delete_doc_by_id(doc_id: int) -> bool:
     id_col, _app_col, path_col = _documents_schema()
 
@@ -122,3 +116,4 @@ def delete_all_docs_for_application(app_id: int) -> int:
         if delete_doc_by_id(int(did)):
             deleted += 1
     return deleted
+

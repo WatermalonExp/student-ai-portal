@@ -1,10 +1,6 @@
 from typing import List, Tuple, Optional
 from models_db import con, now
 
-# =========================
-# Applications (CRUD)
-# Schema: applications(id, user_id, created_ts, program_level, program_name, status)
-# =========================
 
 def create_application(user_id: int, level: str, programme: str) -> int:
     c = con()
@@ -71,9 +67,8 @@ def update_application_status(app_id: int, new_status: str) -> None:
 def submit_application(app_id: int) -> None:
     update_application_status(int(app_id), "Submitted")
 
-# =========================
 # Admin
-# =========================
+
 def list_all_applications() -> List[Tuple]:
     """
     Returns: (id, user_id, program_level, program_name, status, created_ts)
@@ -91,11 +86,7 @@ def list_all_applications() -> List[Tuple]:
     c.close()
     return rows
 
-# =========================
 # Documents
-# Schema: documents(id, application_id, uploaded_ts, doc_type, original_filename, saved_path)
-# =========================
-
 def add_document(app_id: int, doc_type: str, original_filename: str, saved_path: str) -> int:
     c = con()
     cur = c.cursor()
@@ -184,4 +175,5 @@ def get_latest_decision_row(application_id: int):
     row = cur.fetchone()
     c.close()
     return row
+
 
